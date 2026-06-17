@@ -1240,6 +1240,10 @@ function renderInventoryAudit(box){
     </div>`;
   card.appendChild(filters);
 
+  const searchBtn=el("button","btn ember","🔍 Search records");
+  searchBtn.id="audit-run";searchBtn.style.cssText="margin:10px 0 4px;width:100%";
+  card.appendChild(searchBtn);
+
   const result=el("div");
   result.id="audit-results";
   card.appendChild(result);
@@ -1272,6 +1276,7 @@ function renderInventoryAudit(box){
     const n=$("#"+id);if(n)n.oninput=draw;
   });
   const ex=$("#audit-export");if(ex)ex.onclick=exportInventoryAudit;
+  const run=$("#audit-run");if(run)run.onclick=draw;
   const rs=$("#audit-reset");if(rs)rs.onclick=()=>{["audit-from","audit-to","audit-search","audit-action-filter","audit-user-filter"].forEach(id=>{const n=$("#"+id);if(n)n.value="";});draw();};
   const cl=$("#audit-clear");if(cl)cl.onclick=()=>{if(!confirm("Clear the full inventory audit trail saved in this app?"))return;S.audit=(S.audit||[]).filter(a=>a.type!=="inventory"?true:false);save();renderInv();toast("Inventory audit cleared");};
   draw();
@@ -2432,47 +2437,168 @@ function submitCount(){
     }
   });
   const total=Math.round(lines.reduce((s,l)=>s+(Number(l.counted)||0),0)*100)/100;
-  S.invCounts.unshift({id:uid(),submittedAt:new Date().toISOString(),by:actor.name,role:actor.role,itemCount:lines.length,changedCount:changed,totalUnits:total,lines});
+  const sub={id:uid(),submittedAt:new Date().toISOString(),by:actor.name,role:actor.role,itemCount:lines.length,changedCount:changed,totalUnits:total,lines};
+  S.invCounts.unshift(sub);
   S.invCounts=S.invCounts.slice(0,500);
   save();renderInv();renderOrder();
   toast("Inventory submitted · "+lines.length+" items");
+  sheetAutoSave(sub);
+}
+
+async function sheetFetchAll(){
+  const url=sheetUrl();
+  if(!url)throw new Error("No Sheet link set");
+  const c=sheetCfg();
+  const r=await fetch(url+(url.includes("?")?"&":"?")+"action=list&token="+encodeURIComponent(c.token||SHEET_RELAY_TOKEN)+"&_="+Date.now());
+  if(!r.ok)throw new Error("Sheet read failed ("+r.status+")");
+  const j=await r.json();
+  if(j&&j.error)throw new Error(j.error);
+  return (j&&j.submissions)||[];
+}
+function mergeSheetSubmissions(subs){
+  if(!S.invCounts)S.invCounts=[];
+  const have={};S.invCounts.forEach(s=>{if(s.id)have[s.id]=s;});
+  let added=0;
+  (subs||[]).forEach(s=>{
+    if(!s||!s.id)return;
+    if(have[s.id]){have[s.id].sheetSaved=true;return;}
+    s.sheetSaved=true;s.fromSheet=true;
+    if(s.totalUnits==null)s.totalUnits=Math.round((s.lines||[]).reduce((a,l)=>a+(Number(l.counted)||0),0)*100)/100;
+    if(s.itemCount==null)s.itemCount=(s.lines||[]).length;
+    S.invCounts.push(s);added++;
+  });
+  S.invCounts.sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")));
+  S.invCounts=S.invCounts.slice(0,2000);
+  save();
+  return added;
+}
+async function sheetLoad(showToast){
+  const subs=await sheetFetchAll();
+  const n=mergeSheetSubmissions(subs);
+  if(showToast)toast(n?("Loaded "+n+" record"+(n===1?"":"s")+" from the Sheet"):"Up to date — nothing new");
+  return n;
 }
 
 function reviewCounts(){
   const ov=editorShell("Submitted counts");
   const body=ov.querySelector(".ed-body");
   const sv=ov.querySelector(".ed-save");if(sv)sv.style.display="none";
-  const subs=(S.invCounts||[]);
-  if(!subs.length){body.appendChild(el("div","note","No inventory counts submitted yet. Count your items and tap Submit at the top of the Inventory tab."));return;}
-  const exp=el("button","btn ghost","⤓ Export all (CSV)");exp.style.marginBottom="14px";exp.onclick=exportCounts;body.appendChild(exp);
-  subs.forEach(s=>{
-    const card=el("div","card");card.style.cursor="pointer";
-    const head=el("div","row between");
-    head.innerHTML=`<div><b>${esc(fmtDateTime(s.submittedAt))}</b><div class="desc" style="margin-top:3px;color:var(--muted)">By ${esc(s.by||"Unknown")} · ${esc(s.role||"")} · ${s.itemCount} item${s.itemCount===1?"":"s"}${s.changedCount?` · ${s.changedCount} changed`:""}</div></div><span class="pill">view</span>`;
-    card.appendChild(head);
-    const detail=el("div");detail.style.cssText="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px";
-    let html="";
-    (s.lines||[]).forEach(l=>{
-      const diff=(Number(l.counted)||0)-(Number(l.previous)||0);
-      const diffTxt=diff===0?"":(diff>0?` <span style="color:var(--green)">+${fmt(diff)}</span>`:` <span style="color:var(--ember1)">${fmt(diff)}</span>`);
-      html+=`<div class="row between" style="padding:4px 0;font-size:12.5px"><span>${esc(l.name)}</span><span class="num">${fmt(l.counted)} ${esc(l.unit||"")}${diffTxt}</span></div>`;
+
+  const search=inputEl("count-search","","Search item, person, or date…");
+  body.appendChild(fld("Search records",search));
+  const btnRow=el("div","btn-row");btnRow.style.marginBottom="10px";
+  const refresh=el("button","btn green sm","⟳ Load from Sheet");
+  const sendBtn=el("button","btn ember sm","☁ Send unsaved");sendBtn.onclick=sheetBackupAll;
+  const exp=el("button","btn ghost sm","⤓ CSV");exp.onclick=exportCounts;
+  btnRow.appendChild(refresh);btnRow.appendChild(sendBtn);btnRow.appendChild(exp);
+  body.appendChild(btnRow);
+
+  const status=el("div","note");body.appendChild(status);
+  const list=el("div");body.appendChild(list);
+
+  function draw(){
+    const q=(search.value||"").trim().toLowerCase();
+    const all=(S.invCounts||[]);
+    const subs=all.filter(s=>{
+      if(!q)return true;
+      const hay=[fmtDateTime(s.submittedAt),s.by,s.role,(s.lines||[]).map(l=>l.name).join(" ")].join(" ").toLowerCase();
+      return hay.indexOf(q)>=0;
     });
-    detail.innerHTML=html;
-    card.appendChild(detail);
-    card.onclick=()=>{detail.style.display=detail.style.display==="none"?"block":"none";head.querySelector(".pill").textContent=detail.style.display==="none"?"view":"hide";};
-    body.appendChild(card);
-  });
+    list.innerHTML="";
+    if(!all.length){status.textContent="";list.appendChild(el("div","note","No inventory counts yet. Count your items and tap Submit on the Inventory tab."));return;}
+    status.textContent="Showing "+subs.length+" of "+all.length+" record"+(all.length===1?"":"s");
+    if(!subs.length){list.appendChild(el("div","note","No records match that search."));return;}
+    subs.forEach(s=>{
+      const card=el("div","card");card.style.cursor="pointer";
+      const head=el("div","row between");
+      const drv=s.sheetSaved?` · <span style="color:var(--green)">☁ saved</span>`:` · <span style="color:var(--ember1)">not sent</span>`;
+      head.innerHTML=`<div><b>${esc(fmtDateTime(s.submittedAt))}</b><div class="desc" style="margin-top:3px;color:var(--muted)">By ${esc(s.by||"Unknown")} · ${esc(s.role||"")} · ${s.itemCount||0} item${s.itemCount===1?"":"s"}${s.changedCount?` · ${s.changedCount} changed`:""}${drv}</div></div><span class="pill">view</span>`;
+      card.appendChild(head);
+      const detail=el("div");detail.style.cssText="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px";
+      let html="";
+      (s.lines||[]).forEach(l=>{
+        const diff=(Number(l.counted)||0)-(Number(l.previous)||0);
+        const diffTxt=diff===0?"":(diff>0?` <span style="color:var(--green)">+${fmt(diff)}</span>`:` <span style="color:var(--ember1)">${fmt(diff)}</span>`);
+        html+=`<div class="row between" style="padding:4px 0;font-size:12.5px"><span>${esc(l.name)}</span><span class="num">${fmt(l.counted)} ${esc(l.unit||"")}${diffTxt}</span></div>`;
+      });
+      detail.innerHTML=html;
+      card.appendChild(detail);
+      card.onclick=()=>{detail.style.display=detail.style.display==="none"?"block":"none";head.querySelector(".pill").textContent=detail.style.display==="none"?"view":"hide";};
+      list.appendChild(card);
+    });
+  }
+
+  search.oninput=draw;
+  refresh.onclick=()=>{status.textContent="Loading from the Sheet…";sheetLoad(true).then(draw).catch(e=>{status.textContent="Couldn't reach the Sheet — showing what's on this device.";});};
+  draw();
+  status.textContent="Loading everyone's counts from the Sheet…";
+  sheetLoad(false).then(draw).catch(e=>{status.textContent="(Showing this device's records — couldn't reach the Sheet right now.)";});
+  return ov;
 }
 
-function exportCounts(){
-  const subs=(S.invCounts||[]);
-  if(!subs.length){toast("Nothing to export yet");return;}
+function countsCsvString(){
   let csv="Submitted,By,Role,Item,Supplier,Unit,Previous,Counted,Change\n";
-  subs.forEach(s=>{const when=fmtDateTime(s.submittedAt);
+  (S.invCounts||[]).forEach(s=>{const when=fmtDateTime(s.submittedAt);
     (s.lines||[]).forEach(l=>{const diff=(Number(l.counted)||0)-(Number(l.previous)||0);
       csv+=[when,s.by,s.role,l.name,l.supplier,l.unit,l.previous,l.counted,diff].map(x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`).join(",")+"\n";});});
-  download(new Blob([csv],{type:"text/csv"}),"inventory-counts-"+todayStr()+".csv");
+  return csv;
+}
+function exportCounts(){
+  if(!(S.invCounts||[]).length){toast("Nothing to export yet");return;}
+  download(new Blob([countsCsvString()],{type:"text/csv"}),"inventory-counts-"+todayStr()+".csv");
   toast("Counts exported");
+}
+
+/* ---- Shared Google Sheet backup ----
+   Each submitted count is POSTed to a Google Apps Script web app, which
+   appends it (one row per item) to a shared Google Sheet. No key lives on
+   any device — the only setting is the web-app URL, which isn't a secret.
+   Paste the /exec URL into SHEET_RELAY_URL below for zero per-device setup. */
+const SHEET_RELAY_URL="https://script.google.com/macros/s/AKfycbxBrjV2ROOoxPnX1JP8Ym7B2jwxgr72PYu52M-KvtHL-Qic7mRFtT7j-GoLtioK99AY/exec";              /* <-- paste your Apps Script /exec URL here */
+const SHEET_RELAY_TOKEN="bonchon-sea"; /* simple shared guard; must match the script */
+function sheetCfg(){
+  if(!S.settings)S.settings={};
+  if(!S.settings.sheet)S.settings.sheet={url:"",token:SHEET_RELAY_TOKEN,autoSave:true,connected:false};
+  if(!S.settings.sheet.url&&SHEET_RELAY_URL)S.settings.sheet.url=SHEET_RELAY_URL;
+  if(!S.settings.sheet.token)S.settings.sheet.token=SHEET_RELAY_TOKEN;
+  return S.settings.sheet;
+}
+function sheetUrl(){const c=sheetCfg();return (c.url||SHEET_RELAY_URL||"").trim();}
+function sheetPost(obj){
+  const url=sheetUrl();
+  if(!url)return Promise.reject(new Error("No Sheet link set yet"));
+  const c=sheetCfg();
+  const body=JSON.stringify(Object.assign({token:c.token||SHEET_RELAY_TOKEN},obj));
+  return fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body});
+}
+async function sheetSaveSubmission(sub){
+  await sheetPost({type:"count",id:sub.id,submittedAt:sub.submittedAt,by:sub.by,role:sub.role,itemCount:sub.itemCount,changedCount:sub.changedCount,totalUnits:sub.totalUnits,lines:sub.lines});
+  sub.sheetSaved=true;save();return true;
+}
+function sheetAutoSave(sub){
+  const c=sheetCfg();
+  if(!sheetUrl()||c.autoSave===false)return;
+  sheetSaveSubmission(sub).then(()=>{toast("Saved to the shared Sheet");if($("#audit-results"))renderInv();}).catch(e=>{console.warn("Sheet save skipped:",e&&e.message);});
+}
+async function sheetBackupAll(){
+  const c=sheetCfg();
+  if(!sheetUrl()){toast("Add your Sheet link in Setup first");return;}
+  toast("Sending to the shared Sheet…");
+  let ok=0,fail=0;
+  const pending=(S.invCounts||[]).filter(s=>!s.sheetSaved);
+  for(const s of pending){try{await sheetSaveSubmission(s);ok++;}catch(e){fail++;console.warn(e);}}
+  c.connected=true;c.lastBackup=new Date().toISOString();save();
+  toast("Sent "+ok+" count"+(ok===1?"":"s")+" to the Sheet"+(fail?(" · "+fail+" failed"):"")+" — open the Sheet to confirm");
+  if(typeof renderData==="function")renderData();
+}
+async function sheetTest(){
+  const c=sheetCfg();
+  const u=$("#sheet-url");if(u)c.url=u.value.trim();
+  const au=$("#sheet-auto");if(au)c.autoSave=au.checked;
+  save();
+  if(!sheetUrl()){toast("Paste your Sheet link first");return;}
+  try{await sheetPost({type:"test",submittedAt:new Date().toISOString(),by:((typeof currentUser!=="undefined"&&currentUser)||"Setup"),role:((typeof currentRole!=="undefined"&&currentRole)||"manager"),lines:[]});c.connected=true;save();toast("Test sent — check your Sheet for a test row");if(typeof renderData==="function")renderData();}
+  catch(e){toast(e.message||"Couldn't reach the Sheet link");}
 }
 
 function quickPrice(id){
@@ -2890,6 +3016,25 @@ loadCentralUsers(false).then(()=>{const n=$("#lock-mode-note");if(n)n.textConten
     S.settings.syncDeduct=$("#sync-deduct").checked;
     save();startLiveSync();syncFromAloha(true);
   };
+
+  // Shared Google Sheet backup for inventory records
+  const shc=sheetCfg();
+  const shCard=el("div","card");
+  shCard.innerHTML=`<div class="small-label" style="margin-top:0">Back up inventory to a shared Google Sheet</div>
+    <div class="note" style="margin-top:0">Every submitted count is sent to a Google Sheet you all share — permanent and easy to review. Set up the little helper once (steps provided), paste its link below, and every device just works. No keys or logins on any device.</div>`;
+  shCard.appendChild(fld("Sheet helper link (Apps Script /exec URL)",inputEl("sheet-url",shc.url||"","https://script.google.com/macros/s/…/exec")));
+  const shToggles=el("div");
+  shToggles.appendChild(mkToggle("sheet-auto","Auto-send each count to the Sheet",shc.autoSave!==false));
+  shCard.appendChild(shToggles);
+  const shBtns=el("div","btn-row");shBtns.style.marginTop="6px";
+  shBtns.innerHTML=`<button class="btn green sm" id="sheet-test">✓ Test link</button><button class="btn ember sm" id="sheet-backup">☁ Send all now</button>`;
+  shCard.appendChild(shBtns);
+  const shStat=el("div","note");
+  shStat.textContent=shc.url?("Linked"+(shc.lastBackup?(" · last sent "+new Date(shc.lastBackup).toLocaleString()):"")):"No Sheet link set yet";
+  shCard.appendChild(shStat);
+  box.appendChild(shCard);
+  $("#sheet-test").onclick=sheetTest;
+  $("#sheet-backup").onclick=()=>{const c=sheetCfg();c.url=$("#sheet-url").value.trim();c.autoSave=$("#sheet-auto").checked;save();sheetBackupAll();};
 
   // Email sending (admin)
   const E=S.settings.email||{};
