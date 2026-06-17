@@ -83,6 +83,10 @@
   .eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   .view-title{font-family:var(--display);font-weight:800;font-size:25px;margin-bottom:4px}
   .view-sub{color:var(--muted);font-size:13.5px;margin-bottom:20px}
+  .inv-reminder{display:flex;gap:11px;align-items:flex-start;background:rgba(237,28,36,.06);border:1px solid var(--line);border-left:3px solid var(--ember1);border-radius:12px;padding:12px 14px;margin-bottom:18px}
+  .inv-reminder .rm-ic{font-size:18px;line-height:1.3;flex:none}
+  .inv-reminder .rm-body b{display:block;font-size:13px;margin-bottom:2px;color:var(--cream)}
+  .inv-reminder .rm-txt{font-size:12.5px;color:var(--muted);line-height:1.5}
 
   /* Cards */
   .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
@@ -1026,9 +1030,16 @@
 
   <!-- INVENTORY VIEW -->
   <section class="view" id="view-inv">
-    <div class="eyebrow">Stock items</div>
+    <div class="eyebrow">Inventory</div>
     <h2 class="view-title">Inventory</h2>
     <div class="view-sub">Everything you order — supplier, case size, and what's on hand.</div>
+    <div class="inv-reminder">
+      <span class="rm-ic">🗓️</span>
+      <div class="rm-body">
+        <b>Count once a week</b>
+        <span class="rm-txt">Walk the shelves and update your on-hand numbers at the end of each week — same day every time (Sunday night works well). It keeps your ordering and usage accurate.</span>
+      </div>
+    </div>
     <div id="inv-list"></div>
     <div class="btn-row" style="margin-top:6px">
       <button class="btn ember" id="scan-inv">📷 Scan item</button>
@@ -1051,7 +1062,7 @@
   <button data-nav="register"><span class="ni">💵</span>Register<span class="navdot" id="reg-dot"></span></button>
   <button data-nav="sales"><span class="ni">📈</span>Sales</button>
   <button data-nav="menu"><span class="ni">🍗</span>Menu</button>
-  <button data-nav="inv"><span class="ni">📦</span>Stock</button>
+  <button data-nav="inv"><span class="ni">📦</span>Inventory</button>
   <button data-nav="data"><span class="ni">⚙️</span>Setup</button>
 </nav>
 
@@ -1086,7 +1097,8 @@ const DEFAULTS={
   sales:[], // {date:'YYYY-MM-DD', counts:{menuId:qty}}
   orders:[], // {id,batch,date,supplier,status,lines:[{name,code,cases,units,unit}]}
   register:[], // {date,net,cash,credit,comps,promos,voids,employees:[{name,sales,comps,promos,voids,voidCount,compCount}]}
-  audit:[] // in-app inventory audit trail
+  audit:[], // in-app inventory audit trail
+  invCounts:[] // submitted inventory counts {id,submittedAt,by,role,lines:[...]}
 };
 let S=load();
 
@@ -2333,7 +2345,22 @@ function menuEditor(id){
 /* ---- Inventory ---- */
 function renderInv(){
   const box=$("#inv-list");box.innerHTML="";
-  if(!S.ingredients.length){box.appendChild(el("div","note","No stock items yet. Add things you order — cups, bowls, chicken, sauces, packaging. Or tap Import to load an invoice."));renderInventoryAudit(box);return;}
+  if(!S.invCounts)S.invCounts=[];
+
+  // top action bar: submit + review past counts
+  const bar=el("div","row between");
+  bar.style.cssText="gap:10px;margin-bottom:14px;flex-wrap:wrap";
+  const submitTop=el("button","btn ember","📋 Submit inventory");
+  submitTop.style.flex="1";submitTop.onclick=submitCount;
+  const reviewBtn=el("button","btn ghost","🕘 Past counts"+(S.invCounts.length?` (${S.invCounts.length})`:""));
+  reviewBtn.onclick=reviewCounts;
+  bar.appendChild(submitTop);bar.appendChild(reviewBtn);
+  box.appendChild(bar);
+
+  if(!S.ingredients.length){box.appendChild(el("div","note","No inventory items yet. Add things you order — cups, bowls, chicken, sauces, packaging. Or tap Import to load an invoice."));renderInventoryAudit(box);return;}
+
+  box.appendChild(el("div","note","Walk the shelves and type each item's count in the box on the right. When you're done, tap Submit — it saves who counted and when so anyone can review it later."));
+
   const supGroups={};
   S.ingredients.forEach(i=>{(supGroups[i.supplier||"Other"]=supGroups[i.supplier||"Other"]||[]).push(i);});
   Object.keys(supGroups).sort().forEach(sup=>{
@@ -2345,27 +2372,107 @@ function renderInv(){
       if(cat)box.appendChild(el("div","subcat",cat));
       cats[cat].forEach(i=>{
         const it=el("div","item");
-        it.innerHTML=`<div class="row between"><div class="title">${i.name}</div>
-          <div class="row" style="gap:7px">
-            <button class="iconbtn" data-edit="${i.id}">✎</button>
-            <button class="iconbtn" data-del="${i.id}">🗑</button></div></div>
-          <div class="desc" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
-            <span>on hand <b>${fmt(i.onHand||0)}</b> ${i.unit} · case = <b>${fmt(i.pack||1)}</b> ${i.unit}${i.orderCode?` · <span class="num" style="color:var(--faint)">${i.orderCode}</span>`:""}${i.barcode?` · <span class="num" style="color:var(--faint)">▦ ${i.barcode}</span>`:""}</span>
-            <button class="pricechip" data-price="${i.id}">${i.cost!=null?money(i.cost)+"/case":"+ price"}</button>
-          </div>`;
+        const head=el("div","row between");head.style.cssText="align-items:center;gap:10px";
+        const title=el("div","title",esc(i.name));title.style.flex="1";
+        const ctrl=el("div","row");ctrl.style.cssText="gap:7px;align-items:center";
+        const inp=inputEl("cnt-"+i.id,(i.onHand!=null?i.onHand:0),"",true);
+        inp.style.cssText="width:74px;text-align:right";
+        const unit=el("span",null,esc(i.unit||""));unit.style.cssText="color:var(--muted);font-size:12px;min-width:26px";
+        ctrl.appendChild(inp);ctrl.appendChild(unit);
+        head.appendChild(title);head.appendChild(ctrl);
+        it.appendChild(head);
+        const desc=el("div","desc");desc.style.cssText="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:7px";
+        desc.innerHTML=`<span style="color:var(--faint)">was ${fmt(i.onHand||0)} · case ${fmt(i.pack||1)} ${esc(i.unit||"")}${i.orderCode?` · <span class="num">${esc(i.orderCode)}</span>`:""}</span>`;
+        const price=el("button","pricechip",i.cost!=null?money(i.cost)+"/case":"+ price");price.dataset.price=i.id;
+        const edit=el("button","iconbtn","✎");edit.dataset.edit=i.id;
+        const del=el("button","iconbtn","🗑");del.dataset.del=i.id;
+        desc.appendChild(price);desc.appendChild(edit);desc.appendChild(del);
+        it.appendChild(desc);
         box.appendChild(it);
       });
     });
   });
+
+  const submitBot=el("button","btn ember","📋 Submit inventory");
+  submitBot.style.marginTop="16px";submitBot.onclick=submitCount;
+  box.appendChild(submitBot);
+
   renderInventoryAudit(box);
   box.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>invEditor(b.dataset.edit));
   box.querySelectorAll("[data-price]").forEach(b=>b.onclick=()=>quickPrice(b.dataset.price));
   box.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
     const used=S.menu.some(m=>(m.recipe||[]).some(r=>r[0]===b.dataset.del));
     if(used&&!confirm("This item is used in a recipe. Delete anyway?"))return;
-    if(!used&&!confirm("Delete this stock item?"))return;
+    if(!used&&!confirm("Delete this item?"))return;
     const item=ingById(b.dataset.del);const beforeSnap=invSnap(item);
-    S.ingredients=S.ingredients.filter(x=>x.id!==b.dataset.del);auditInventory("deleted",item,beforeSnap,null,"Stock item deleted");save();renderInv();renderOrder();});
+    S.ingredients=S.ingredients.filter(x=>x.id!==b.dataset.del);auditInventory("deleted",item,beforeSnap,null,"Item deleted");save();renderInv();renderOrder();});
+}
+
+/* ---- Inventory count submission + review ---- */
+function fmtDateTime(iso){try{return new Date(iso).toLocaleString([],{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});}catch(e){return String(iso||"");}}
+
+function submitCount(){
+  if(!S.ingredients.length){toast("Add items first");return;}
+  if(!S.invCounts)S.invCounts=[];
+  const actor=auditActor();
+  const lines=[];let changed=0;
+  S.ingredients.forEach(i=>{
+    const inp=document.getElementById("cnt-"+i.id);
+    const prev=Number(i.onHand)||0;
+    let counted=prev;
+    if(inp){const raw=String(inp.value).trim();counted=raw===""?prev:(Number(raw)||0);}
+    lines.push({itemId:i.id,name:i.name,supplier:i.supplier||"Other",category:i.category||"",unit:i.unit||"",previous:prev,counted:counted});
+    if(counted!==prev)changed++;
+  });
+  if(!confirm("Submit this inventory count?\n\n"+lines.length+" items · "+changed+" changed\nBy "+actor.name))return;
+  lines.forEach(l=>{
+    if(l.counted!==l.previous){
+      const it=ingById(l.itemId);
+      if(it){const before=invSnap(it);it.onHand=l.counted;auditInventory("count",it,before,invSnap(it),"Inventory count");}
+    }
+  });
+  const total=Math.round(lines.reduce((s,l)=>s+(Number(l.counted)||0),0)*100)/100;
+  S.invCounts.unshift({id:uid(),submittedAt:new Date().toISOString(),by:actor.name,role:actor.role,itemCount:lines.length,changedCount:changed,totalUnits:total,lines});
+  S.invCounts=S.invCounts.slice(0,500);
+  save();renderInv();renderOrder();
+  toast("Inventory submitted · "+lines.length+" items");
+}
+
+function reviewCounts(){
+  const ov=editorShell("Submitted counts");
+  const body=ov.querySelector(".ed-body");
+  const sv=ov.querySelector(".ed-save");if(sv)sv.style.display="none";
+  const subs=(S.invCounts||[]);
+  if(!subs.length){body.appendChild(el("div","note","No inventory counts submitted yet. Count your items and tap Submit at the top of the Inventory tab."));return;}
+  const exp=el("button","btn ghost","⤓ Export all (CSV)");exp.style.marginBottom="14px";exp.onclick=exportCounts;body.appendChild(exp);
+  subs.forEach(s=>{
+    const card=el("div","card");card.style.cursor="pointer";
+    const head=el("div","row between");
+    head.innerHTML=`<div><b>${esc(fmtDateTime(s.submittedAt))}</b><div class="desc" style="margin-top:3px;color:var(--muted)">By ${esc(s.by||"Unknown")} · ${esc(s.role||"")} · ${s.itemCount} item${s.itemCount===1?"":"s"}${s.changedCount?` · ${s.changedCount} changed`:""}</div></div><span class="pill">view</span>`;
+    card.appendChild(head);
+    const detail=el("div");detail.style.cssText="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px";
+    let html="";
+    (s.lines||[]).forEach(l=>{
+      const diff=(Number(l.counted)||0)-(Number(l.previous)||0);
+      const diffTxt=diff===0?"":(diff>0?` <span style="color:var(--green)">+${fmt(diff)}</span>`:` <span style="color:var(--ember1)">${fmt(diff)}</span>`);
+      html+=`<div class="row between" style="padding:4px 0;font-size:12.5px"><span>${esc(l.name)}</span><span class="num">${fmt(l.counted)} ${esc(l.unit||"")}${diffTxt}</span></div>`;
+    });
+    detail.innerHTML=html;
+    card.appendChild(detail);
+    card.onclick=()=>{detail.style.display=detail.style.display==="none"?"block":"none";head.querySelector(".pill").textContent=detail.style.display==="none"?"view":"hide";};
+    body.appendChild(card);
+  });
+}
+
+function exportCounts(){
+  const subs=(S.invCounts||[]);
+  if(!subs.length){toast("Nothing to export yet");return;}
+  let csv="Submitted,By,Role,Item,Supplier,Unit,Previous,Counted,Change\n";
+  subs.forEach(s=>{const when=fmtDateTime(s.submittedAt);
+    (s.lines||[]).forEach(l=>{const diff=(Number(l.counted)||0)-(Number(l.previous)||0);
+      csv+=[when,s.by,s.role,l.name,l.supplier,l.unit,l.previous,l.counted,diff].map(x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`).join(",")+"\n";});});
+  download(new Blob([csv],{type:"text/csv"}),"inventory-counts-"+todayStr()+".csv");
+  toast("Counts exported");
 }
 
 function quickPrice(id){
