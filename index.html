@@ -124,6 +124,11 @@
   .item .title{font-size:15.5px;font-weight:600}
   .item .desc{color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.45}
   .item .desc b{color:var(--cream);font-weight:600}
+  #inv-list .item .title{font-size:17px}
+  #inv-list .item .desc{font-size:13.5px}
+  #inv-list .item .desc span{font-size:13.5px}
+  #inv-list .subcat{font-size:13.5px}
+  #inv-list .item input{font-size:16px}
 
   /* Buttons */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
@@ -2382,7 +2387,7 @@ function renderInv(){
         const ctrl=el("div","row");ctrl.style.cssText="gap:7px;align-items:center";
         const inp=inputEl("cnt-"+i.id,(i.onHand!=null?i.onHand:0),"",true);
         inp.style.cssText="width:74px;text-align:right";
-        const unit=el("span",null,esc(i.unit||""));unit.style.cssText="color:var(--muted);font-size:12px;min-width:26px";
+        const unit=el("span",null,esc(i.unit||""));unit.style.cssText="color:var(--muted);font-size:13.5px;min-width:28px";
         ctrl.appendChild(inp);ctrl.appendChild(unit);
         head.appendChild(title);head.appendChild(ctrl);
         it.appendChild(head);
