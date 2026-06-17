@@ -129,9 +129,10 @@
   #inv-list .item .desc span{font-size:13.5px}
   #inv-list .subcat{font-size:13.5px}
   #inv-list .item input{font-size:16px}
-  .inv-tools{display:flex;gap:9px;align-items:center;margin:2px 0 14px}
-  .inv-tools .inv-search{flex:1;min-width:0}
-  .inv-tools .inv-scanbtn{flex:none;width:auto;white-space:nowrap;padding:11px 15px}
+  .inv-tools{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:2px 0 14px}
+  .inv-tools .inv-search{flex:1 1 100%;min-width:0}
+  .inv-toolbtns{display:flex;gap:9px;flex:1 1 100%}
+  .inv-toolbtns .btn{flex:1;white-space:nowrap;padding:11px 15px}
   .inv-hit{outline:2px solid var(--ember1);outline-offset:2px;animation:invflash 1.8s ease-out}
   @keyframes invflash{0%{background:rgba(237,28,36,.22)}100%{background:var(--surface)}}
 
@@ -260,20 +261,21 @@
   .scan-bottom{background:rgba(0,0,0,.55);padding:14px 16px calc(16px + env(safe-area-inset-bottom))}
   .scan-manual{display:grid;grid-template-columns:1fr auto;gap:9px}
   @media (prefers-reduced-motion:reduce){.scan-frame::after{animation:none;top:50%}}
-  #lockscreen{position:fixed;inset:0;z-index:9999;background:var(--base);display:flex;align-items:center;justify-content:center}
+  #lockscreen{position:fixed;inset:0;z-index:9999;background:var(--base);display:flex;align-items:stretch;justify-content:center}
   #lockscreen.hidden{display:none}
-  .lock-box{width:100%;max-width:300px;padding:24px;text-align:center}
-  .lock-word{font-family:var(--display);font-weight:800;font-size:30px;letter-spacing:.06em;color:var(--ember1)}
-  .lock-sub{color:var(--muted);margin-top:6px;font-size:14px}
+  .lock-box{width:100%;max-width:440px;padding:38px 22px calc(26px + env(safe-area-inset-bottom));text-align:center;display:flex;flex-direction:column;min-height:100%;box-sizing:border-box}
+  .lock-word{font-family:var(--display);font-weight:800;font-size:44px;line-height:1.04;letter-spacing:.01em;color:var(--ember1)}
+  .lock-tag{color:var(--cream);margin-top:8px;font-size:13px;font-weight:600;letter-spacing:.16em;text-transform:uppercase}
+  .lock-sub{color:var(--muted);margin-top:14px;font-size:14px}
   .lock-sub.err{color:var(--ember1);font-weight:700}
-  .lock-dots{display:flex;gap:14px;justify-content:center;margin:22px 0 26px}
+  .lock-dots{display:flex;gap:14px;justify-content:center;margin:20px 0 24px}
   .lock-dots span{width:14px;height:14px;border-radius:50%;border:2px solid var(--line)}
   .lock-dots span.on{background:var(--ember1);border-color:var(--ember1)}
-  .lock-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-  .lock-pad button{height:64px;border-radius:50%;border:1px solid var(--line);background:var(--surface);
-    color:var(--cream);font-size:24px;font-family:var(--mono);cursor:pointer}
+  .lock-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:auto}
+  .lock-pad button{aspect-ratio:1;height:auto;border-radius:18px;border:1px solid var(--line);background:var(--surface);
+    color:var(--cream);font-size:28px;font-family:var(--mono);cursor:pointer;display:flex;align-items:center;justify-content:center}
   .lock-pad button:active{background:var(--ember1);color:#fff}
-  .lock-pad button.lk-blank{background:transparent;border-color:transparent;font-size:20px;color:var(--muted)}
+  .lock-pad button.lk-blank{background:transparent;border-color:transparent;font-size:24px;color:var(--muted)}
   .hdr-lock{}
   .hdr-lock:hover{opacity:1}
   .user-row{display:grid;grid-template-columns:1fr 96px 64px 34px;gap:8px;align-items:center;margin:8px 0}
@@ -958,15 +960,19 @@
   .scan-presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .chip{padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;white-space:nowrap}
   .chip.on{background:var(--ember1);color:#fff;border-color:var(--ember1)}
+  .coming-soon{margin-top:40px;text-align:center;padding:36px 22px;border:1px dashed var(--line);border-radius:18px;background:var(--surface)}
+  .cs-icon{font-size:52px;line-height:1;opacity:.9}
+  .cs-title{font-family:var(--display);font-weight:800;font-size:24px;margin-top:14px;color:var(--cream)}
+  .cs-text{color:var(--muted);font-size:14px;line-height:1.5;margin-top:10px;max-width:380px;margin-left:auto;margin-right:auto}
 </style>
 </head>
 <body>
 <div id="lockscreen">
   <div class="lock-box">
-    <div class="lock-word">BONCHON</div>
+    <div class="lock-word">EMRE Group</div>
+    <div class="lock-tag">Store Efficiency Application</div>
     <div class="lock-sub" id="lock-sub">Enter PIN</div>
     <div class="lock-dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="lock-count" id="lock-count">0 / 6 minimum</div>
     <div class="lock-pad">
       <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
       <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
@@ -1000,8 +1006,9 @@
   <!-- ORDER VIEW -->
   <section class="view active" id="view-order">
     <div class="eyebrow">This week's order sheet</div>
-    <h2 class="view-title">What to order</h2>
-    <div class="view-sub" id="order-window">Based on your sales averages</div>
+    <h2 class="view-title">🚛 Truck Order</h2>
+    <div class="view-sub">Confirm your Weekly Order</div>
+    <div class="view-sub" id="order-window" style="margin-top:2px"></div>
     <div id="order-body"></div>
   </section>
 
@@ -1027,15 +1034,16 @@
     <div id="sales-import" style="display:none"></div>
   </section>
 
-  <!-- MENU VIEW -->
+  <!-- WASTE VIEW -->
   <section class="view" id="view-menu">
-    <div class="eyebrow">Recipes</div>
-    <h2 class="view-title">Menu items</h2>
-    <div class="view-sub">What each dish uses. This is what turns sales into ordering needs.</div>
-    <div id="menu-list"></div>
-    <button class="btn ember" id="add-menu" style="margin-top:6px">＋ Add menu item</button>
-    <button class="btn ghost" id="import-menu" style="margin-top:9px">⤓ Import menu list (paste / Aloha)</button>
-    <button class="btn ghost" id="clear-menu" style="margin-top:9px;color:var(--ember1)">🗑 Clear all menu items</button>
+    <div class="eyebrow">Waste tracking</div>
+    <h2 class="view-title">🗑️ Waste</h2>
+    <div class="view-sub">Record what gets thrown out — by item, reason, and value.</div>
+    <div class="coming-soon">
+      <div class="cs-icon">🗑️</div>
+      <div class="cs-title">Coming soon</div>
+      <div class="cs-text">This is where you'll log store wastage — spoiled product, dropped or expired items, prep mistakes — so you can see what's costing you and tighten it up. We're building it now.</div>
+    </div>
   </section>
 
   <!-- INVENTORY VIEW -->
@@ -1052,12 +1060,14 @@
     </div>
     <div class="inv-tools">
       <input id="inv-search" class="input inv-search" inputmode="search" placeholder="🔍 Search item or barcode…">
-      <button class="btn ember inv-scanbtn" id="inv-scan-top">📷 Scan</button>
+      <div class="inv-toolbtns">
+        <button class="btn ember inv-scanbtn" id="inv-scan-top">📷 Scan</button>
+        <button class="btn ghost inv-addbtn" id="inv-add-top">＋ Add item</button>
+      </div>
     </div>
     <div id="inv-list"></div>
     <div class="btn-row" style="margin-top:6px">
       <button class="btn ghost" id="scan-inv">📷 Add item by barcode</button>
-      <button class="btn ghost" id="add-inv">＋ Add manually</button>
     </div>
     <button class="btn ghost" id="import-inv" style="margin-top:9px">⤓ Import items from invoice</button>
   </section>
@@ -1075,7 +1085,7 @@
   <button class="active" data-nav="order"><span class="ni">📋</span>Order</button>
   <button data-nav="register"><span class="ni">💵</span>Register<span class="navdot" id="reg-dot"></span></button>
   <button data-nav="sales"><span class="ni">📈</span>Sales</button>
-  <button data-nav="menu"><span class="ni">🍗</span>Menu</button>
+  <button data-nav="menu"><span class="ni">🗑️</span>Waste</button>
   <button data-nav="inv"><span class="ni">📦</span>Inventory</button>
   <button data-nav="data"><span class="ni">⚙️</span>Setup</button>
 </nav>
@@ -2306,7 +2316,7 @@ function previewImport(nameCol,qtyCol){
 
 /* ---- Menu ---- */
 function renderMenu(){
-  const box=$("#menu-list");box.innerHTML="";
+  const box=$("#menu-list");if(!box)return;box.innerHTML="";
   if(!S.menu.length){box.appendChild(el("div","note","No menu items yet. Add a dish to define what it uses."));return;}
   S.menu.forEach(m=>{
     const parts=(m.recipe||[]).map(([iid,q])=>{const i=ingById(iid);return i?`<b>${fmt(q)}</b> ${i.unit}${q!=1&&!i.unit.endsWith("s")?"":""} ${i.name}`:"";}).filter(Boolean);
@@ -2754,9 +2764,10 @@ function invEditor(id,prefill){
   // supplier select with custom
   const supWrap=el("label","fld");supWrap.innerHTML="<span>Supplier</span>";
   const sup=el("select","input");sup.id="e-sup";
-  const sups=[...new Set([...S.settings.suppliers,i.supplier].filter(Boolean))];
+  const defaultSups=["Performance","Sysco","Asian Market","Other"];
+  const sups=[...new Set([...defaultSups,...S.settings.suppliers,i.supplier].filter(Boolean))];
   sups.forEach(s=>{const o=el("option",null,s);o.value=s;if(s===i.supplier)o.selected=true;sup.appendChild(o);});
-  const oc=el("option",null,"+ Other…");oc.value="__other";sup.appendChild(oc);
+  const oc=el("option",null,"＋ Add another supplier…");oc.value="__other";sup.appendChild(oc);
   sup.onchange=e=>{if(e.target.value==="__other"){const n=prompt("Supplier name?");if(n){const o=el("option",null,n);o.value=n;sup.insertBefore(o,oc);sup.value=n;if(!S.settings.suppliers.includes(n)){S.settings.suppliers.push(n);save();}}else sup.value=sups[0];}};
   supWrap.appendChild(sup);g.appendChild(supWrap);
   body.appendChild(g);
@@ -3552,14 +3563,14 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Enter"){tryUnlock();e.preventDefault();}
 });
 const hdrLock=$("#hdr-lock");if(hdrLock)hdrLock.onclick=lock;
-$("#add-menu").onclick=()=>menuEditor(null);
-$("#clear-menu").onclick=()=>{
+const _am=$("#add-menu");if(_am)_am.onclick=()=>menuEditor(null);
+const _cm=$("#clear-menu");if(_cm)_cm.onclick=()=>{
   if(!S.menu.length){toast("Menu is already empty");return;}
   if(!confirm("Erase all "+S.menu.length+" menu items? (Sales history and inventory are not affected.)"))return;
   S.menu=[];save();renderMenu();renderSalesEnter();renderOrder();
   toast("Menu cleared — ready for your Aloha import");
 };
-$("#import-menu").onclick=()=>{
+const _im=$("#import-menu");if(_im)_im.onclick=()=>{
   const ov=editorShell("Import menu");
   const body=ov.querySelector(".ed-body");
   body.appendChild(el("div","note","Paste your menu items from Aloha — one item name per line. If you paste a CSV or report, the app takes the item name from the first column. Lines that look like headers, totals, or prices are skipped. Existing items aren't duplicated."));
@@ -3590,7 +3601,7 @@ function parseMenuText(text){
   });
   return out;
 }
-$("#add-inv").onclick=()=>invEditor(null);
+$("#inv-add-top").onclick=()=>invEditor(null);
 $("#import-inv").onclick=()=>openItemImport();
 $("#sales-sync").onclick=()=>syncFromAloha(true);
 $("#inv-search").addEventListener("input",e=>{invFilter=e.target.value;renderInv();});
