@@ -129,6 +129,11 @@
   #inv-list .item .desc span{font-size:13.5px}
   #inv-list .subcat{font-size:13.5px}
   #inv-list .item input{font-size:16px}
+  .inv-tools{display:flex;gap:9px;align-items:center;margin:2px 0 14px}
+  .inv-tools .inv-search{flex:1;min-width:0}
+  .inv-tools .inv-scanbtn{flex:none;width:auto;white-space:nowrap;padding:11px 15px}
+  .inv-hit{outline:2px solid var(--ember1);outline-offset:2px;animation:invflash 1.8s ease-out}
+  @keyframes invflash{0%{background:rgba(237,28,36,.22)}100%{background:var(--surface)}}
 
   /* Buttons */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
@@ -1045,9 +1050,13 @@
         <span class="rm-txt">Walk the shelves and update your on-hand numbers at the end of each week — same day every time (Sunday night works well). It keeps your ordering and usage accurate.</span>
       </div>
     </div>
+    <div class="inv-tools">
+      <input id="inv-search" class="input inv-search" inputmode="search" placeholder="🔍 Search item or barcode…">
+      <button class="btn ember inv-scanbtn" id="inv-scan-top">📷 Scan</button>
+    </div>
     <div id="inv-list"></div>
     <div class="btn-row" style="margin-top:6px">
-      <button class="btn ember" id="scan-inv">📷 Scan item</button>
+      <button class="btn ghost" id="scan-inv">📷 Add item by barcode</button>
       <button class="btn ghost" id="add-inv">＋ Add manually</button>
     </div>
     <button class="btn ghost" id="import-inv" style="margin-top:9px">⤓ Import items from invoice</button>
@@ -2353,6 +2362,8 @@ function menuEditor(id){
 }
 
 /* ---- Inventory ---- */
+let invFilter="";
+let invDraft={};
 function renderInv(){
   const box=$("#inv-list");box.innerHTML="";
   if(!S.invCounts)S.invCounts=[];
@@ -2371,8 +2382,11 @@ function renderInv(){
 
   box.appendChild(el("div","note","Walk the shelves and type each item's count in the box on the right. When you're done, tap Submit — it saves who counted and when so anyone can review it later."));
 
+  const term=(invFilter||"").trim().toLowerCase();
+  const ingList=term?S.ingredients.filter(i=>(((i.name||"")+" "+(i.barcode||"")+" "+(i.orderCode||"")+" "+(i.category||"")+" "+(i.supplier||"")+" "+(i.unit||"")).toLowerCase().indexOf(term)>=0)):S.ingredients;
+  if(term&&!ingList.length){box.appendChild(el("div","note","No items match “"+esc(invFilter)+"”. Clear the search to see all, or tap Scan to add it."));renderInventoryAudit(box);return;}
   const supGroups={};
-  S.ingredients.forEach(i=>{(supGroups[i.supplier||"Other"]=supGroups[i.supplier||"Other"]||[]).push(i);});
+  ingList.forEach(i=>{(supGroups[i.supplier||"Other"]=supGroups[i.supplier||"Other"]||[]).push(i);});
   Object.keys(supGroups).sort().forEach(sup=>{
     const sh=el("div");sh.style.margin="20px 0 10px";sh.innerHTML=supplierBadge(sup,true);
     box.appendChild(sh);
@@ -2385,8 +2399,9 @@ function renderInv(){
         const head=el("div","row between");head.style.cssText="align-items:center;gap:10px";
         const title=el("div","title",esc(i.name));title.style.flex="1";
         const ctrl=el("div","row");ctrl.style.cssText="gap:7px;align-items:center";
-        const inp=inputEl("cnt-"+i.id,(i.onHand!=null?i.onHand:0),"",true);
+        const inp=inputEl("cnt-"+i.id,(invDraft[i.id]!==undefined?invDraft[i.id]:(i.onHand!=null?i.onHand:0)),"",true);
         inp.style.cssText="width:74px;text-align:right";
+        inp.addEventListener("input",()=>{invDraft[i.id]=inp.value;});
         const unit=el("span",null,esc(i.unit||""));unit.style.cssText="color:var(--muted);font-size:13.5px;min-width:28px";
         ctrl.appendChild(inp);ctrl.appendChild(unit);
         head.appendChild(title);head.appendChild(ctrl);
@@ -2427,10 +2442,9 @@ function submitCount(){
   const actor=auditActor();
   const lines=[];let changed=0;
   S.ingredients.forEach(i=>{
-    const inp=document.getElementById("cnt-"+i.id);
     const prev=Number(i.onHand)||0;
     let counted=prev;
-    if(inp){const raw=String(inp.value).trim();counted=raw===""?prev:(Number(raw)||0);}
+    if(invDraft[i.id]!==undefined){const raw=String(invDraft[i.id]).trim();counted=raw===""?prev:(Number(raw)||0);}
     lines.push({itemId:i.id,name:i.name,supplier:i.supplier||"Other",category:i.category||"",unit:i.unit||"",previous:prev,counted:counted});
     if(counted!==prev)changed++;
   });
@@ -2445,6 +2459,7 @@ function submitCount(){
   const sub={id:uid(),submittedAt:new Date().toISOString(),by:actor.name,role:actor.role,itemCount:lines.length,changedCount:changed,totalUnits:total,lines};
   S.invCounts.unshift(sub);
   S.invCounts=S.invCounts.slice(0,500);
+  invDraft={};
   save();renderInv();renderOrder();
   toast("Inventory submitted · "+lines.length+" items");
   sheetAutoSave(sub);
@@ -2650,6 +2665,57 @@ function quickPrice(id){
   auditInventory("price updated",i,beforeSnap,invSnap(i),"Quick price update");
   save();renderInv();renderOrder();
   toast(t===""?"Price cleared":"Price updated to "+money(i.cost));
+}
+
+function scanToCount(){
+  openScanner(code=>{
+    const found=S.ingredients.find(x=>x.barcode&&String(x.barcode)===String(code));
+    if(found)jumpToInvItem(found.id);
+    else assignBarcodeFlow(code);
+  });
+}
+function jumpToInvItem(id){
+  if(invFilter){invFilter="";const sb=$("#inv-search");if(sb)sb.value="";}
+  renderInv();
+  setTimeout(()=>{
+    const inp=document.getElementById("cnt-"+id);
+    if(!inp){toast("Couldn't locate that item in the list");return;}
+    const row=inp.closest(".item")||inp;
+    row.scrollIntoView({behavior:"smooth",block:"center"});
+    row.classList.add("inv-hit");setTimeout(()=>row.classList.remove("inv-hit"),1800);
+    try{inp.focus({preventScroll:true});inp.select();}catch(e){}
+    const it=ingById(id);if(it)toast("Found "+it.name+" — type the new count");
+  },150);
+}
+function assignBarcodeFlow(code){
+  const ov=editorShell("Unknown barcode");
+  const body=ov.querySelector(".ed-body");
+  const sv=ov.querySelector(".ed-save");if(sv)sv.style.display="none";
+  body.appendChild(el("div","note","Nothing in your list has the barcode "+esc(code)+". Assign it to an item you already have, or add it as a new item."));
+  const search=inputEl("ab-search","","Search your items…");
+  body.appendChild(fld("Find an existing item",search));
+  const listWrap=el("div");listWrap.style.cssText="max-height:44vh;overflow:auto;margin-top:2px";
+  body.appendChild(listWrap);
+  function paint(){
+    const q=(search.value||"").trim().toLowerCase();
+    listWrap.innerHTML="";
+    const items=S.ingredients.filter(i=>!q||(((i.name||"")+" "+(i.supplier||"")+" "+(i.category||"")).toLowerCase().indexOf(q)>=0)).slice(0,60);
+    if(!items.length){listWrap.appendChild(el("div","note","No matching items."));return;}
+    items.forEach(i=>{
+      const r=el("button","btn ghost");r.style.cssText="width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;margin-bottom:6px";
+      r.innerHTML=`<span>${esc(i.name)}</span><span class="muted" style="font-size:12px">${esc(i.supplier||"")}${i.barcode?" · has code":""}</span>`;
+      r.onclick=()=>{
+        const before=invSnap(i);i.barcode=String(code);
+        auditInventory("edit",i,before,invSnap(i),"Assigned barcode "+code);
+        save();closeEditor(ov);toast("Barcode assigned to "+i.name);jumpToInvItem(i.id);
+      };
+      listWrap.appendChild(r);
+    });
+  }
+  search.addEventListener("input",paint);paint();
+  const addNew=el("button","btn ember","＋ Add as a new item");addNew.style.marginTop="10px";addNew.style.width="100%";
+  addNew.onclick=()=>{closeEditor(ov);invEditor(null,{barcode:code,lookup:true});};
+  body.appendChild(addNew);
 }
 
 function invEditor(id,prefill){
@@ -3527,6 +3593,8 @@ function parseMenuText(text){
 $("#add-inv").onclick=()=>invEditor(null);
 $("#import-inv").onclick=()=>openItemImport();
 $("#sales-sync").onclick=()=>syncFromAloha(true);
+$("#inv-search").addEventListener("input",e=>{invFilter=e.target.value;renderInv();});
+$("#inv-scan-top").onclick=()=>scanToCount();
 $("#scan-inv").onclick=()=>openScanner(code=>{
   const found=S.ingredients.find(x=>x.barcode&&String(x.barcode)===String(code));
   if(found){toast("Found: "+found.name);invEditor(found.id);}
