@@ -2445,7 +2445,7 @@ function submitCount(){
   sheetAutoSave(sub);
 }
 
-function sheetFetchAll(){
+function sheetJsonp(params){
   return new Promise(function(res,rej){
     const url=sheetUrl();
     if(!url){rej(new Error("No Sheet link set"));return;}
@@ -2454,12 +2454,22 @@ function sheetFetchAll(){
     const s=document.createElement("script");
     let done=false;
     const cleanup=function(){try{delete window[cb];}catch(e){window[cb]=undefined;}if(s.parentNode)s.parentNode.removeChild(s);};
-    window[cb]=function(data){done=true;cleanup();if(data&&data.error){rej(new Error(data.error));}else{res((data&&data.submissions)||[]);}};
+    window[cb]=function(data){done=true;cleanup();res(data||{});};
     s.onerror=function(){if(!done){cleanup();rej(new Error("Couldn't reach the Sheet"));}};
-    s.src=url+(url.indexOf("?")>=0?"&":"?")+"action=list&token="+encodeURIComponent(c.token||SHEET_RELAY_TOKEN)+"&callback="+cb+"&_="+Date.now();
+    s.src=url+(url.indexOf("?")>=0?"&":"?")+params+"&token="+encodeURIComponent(c.token||SHEET_RELAY_TOKEN)+"&callback="+cb+"&_="+Date.now();
     document.head.appendChild(s);
     setTimeout(function(){if(!done){cleanup();rej(new Error("Sheet request timed out"));}},12000);
   });
+}
+async function sheetFetchAll(){
+  const j=await sheetJsonp("action=list");
+  if(j&&j.error)throw new Error(j.error);
+  return (j&&j.submissions)||[];
+}
+async function sheetDelete(id){
+  const j=await sheetJsonp("action=delete&id="+encodeURIComponent(id));
+  if(j&&j.error)throw new Error(j.error);
+  return (j&&j.deleted)||0;
 }
 function mergeSheetSubmissions(subs){
   if(!S.invCounts)S.invCounts=[];
@@ -2502,6 +2512,16 @@ function reviewCounts(){
   const status=el("div","note");body.appendChild(status);
   const list=el("div");body.appendChild(list);
 
+  function removeRecord(s){
+    if(currentRole!=="manager"){toast("Managers only");return;}
+    if(!confirm("Delete this count permanently?\n\nIt will also be removed from the Google Sheet."))return;
+    S.invCounts=(S.invCounts||[]).filter(x=>x.id!==s.id);
+    save();draw();
+    if(s.id&&sheetUrl()){
+      sheetDelete(s.id).then(function(n){toast("Deleted · removed "+n+" row"+(n===1?"":"s")+" from the Sheet");})
+        .catch(function(){toast("Removed here, but the Sheet delete didn't confirm — try again so it clears everywhere");});
+    }else{toast("Record deleted");}
+  }
   function draw(){
     const q=(search.value||"").trim().toLowerCase();
     const all=(S.invCounts||[]);
@@ -2518,7 +2538,15 @@ function reviewCounts(){
       const card=el("div","card");card.style.cursor="pointer";
       const head=el("div","row between");
       const drv=s.sheetSaved?` · <span style="color:var(--green)">☁ saved</span>`:` · <span style="color:var(--ember1)">not sent</span>`;
-      head.innerHTML=`<div><b>${esc(fmtDateTime(s.submittedAt))}</b><div class="desc" style="margin-top:3px;color:var(--muted)">By ${esc(s.by||"Unknown")} · ${esc(s.role||"")} · ${s.itemCount||0} item${s.itemCount===1?"":"s"}${s.changedCount?` · ${s.changedCount} changed`:""}${drv}</div></div><span class="pill">view</span>`;
+      head.innerHTML=`<div style="flex:1"><b>${esc(fmtDateTime(s.submittedAt))}</b><div class="desc" style="margin-top:3px;color:var(--muted)">By ${esc(s.by||"Unknown")} · ${esc(s.role||"")} · ${s.itemCount||0} item${s.itemCount===1?"":"s"}${s.changedCount?` · ${s.changedCount} changed`:""}${drv}</div></div>`;
+      const right=el("div","row");right.style.cssText="gap:8px;align-items:center;flex:none";
+      if(currentRole==="manager"){
+        const del=el("button","iconbtn","🗑");del.title="Delete record";del.style.color="var(--ember1)";
+        del.onclick=(ev)=>{ev.stopPropagation();removeRecord(s);};
+        right.appendChild(del);
+      }
+      const pill=el("span","pill","view");right.appendChild(pill);
+      head.appendChild(right);
       card.appendChild(head);
       const detail=el("div");detail.style.cssText="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px";
       let html="";
