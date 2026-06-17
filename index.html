@@ -2445,15 +2445,21 @@ function submitCount(){
   sheetAutoSave(sub);
 }
 
-async function sheetFetchAll(){
-  const url=sheetUrl();
-  if(!url)throw new Error("No Sheet link set");
-  const c=sheetCfg();
-  const r=await fetch(url+(url.includes("?")?"&":"?")+"action=list&token="+encodeURIComponent(c.token||SHEET_RELAY_TOKEN)+"&_="+Date.now());
-  if(!r.ok)throw new Error("Sheet read failed ("+r.status+")");
-  const j=await r.json();
-  if(j&&j.error)throw new Error(j.error);
-  return (j&&j.submissions)||[];
+function sheetFetchAll(){
+  return new Promise(function(res,rej){
+    const url=sheetUrl();
+    if(!url){rej(new Error("No Sheet link set"));return;}
+    const c=sheetCfg();
+    const cb="__sea_cb_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
+    const s=document.createElement("script");
+    let done=false;
+    const cleanup=function(){try{delete window[cb];}catch(e){window[cb]=undefined;}if(s.parentNode)s.parentNode.removeChild(s);};
+    window[cb]=function(data){done=true;cleanup();if(data&&data.error){rej(new Error(data.error));}else{res((data&&data.submissions)||[]);}};
+    s.onerror=function(){if(!done){cleanup();rej(new Error("Couldn't reach the Sheet"));}};
+    s.src=url+(url.indexOf("?")>=0?"&":"?")+"action=list&token="+encodeURIComponent(c.token||SHEET_RELAY_TOKEN)+"&callback="+cb+"&_="+Date.now();
+    document.head.appendChild(s);
+    setTimeout(function(){if(!done){cleanup();rej(new Error("Sheet request timed out"));}},12000);
+  });
 }
 function mergeSheetSubmissions(subs){
   if(!S.invCounts)S.invCounts=[];
