@@ -1,0 +1,90 @@
+<!--
+  ═══════════════════════════════════════════════════════════════
+  SYSTEMS STATUS — drop-in tab for your ops app
+  ───────────────────────────────────────────────────────────────
+  HOW TO USE
+  1. Upload status-monitor.html into the SAME repo folder as index.html.
+  2. Copy everything between the two ===== lines below.
+  3. Paste it into index.html, just BEFORE the closing  </body>  tag.
+  4. Commit. Done — a "Systems Status" button appears; tap it to open the monitor.
+
+  It's fully self-contained and namespaced (everything prefixed ssx-),
+  so it won't collide with or alter any of your existing code.
+
+  OPTIONAL — to make it sit inside your real nav bar instead of floating:
+  move just the <button id="ssx-open"> line into your tab row, then delete
+  the .ssx-fab style block. Everything else stays the same.
+  ═══════════════════════════════════════════════════════════════
+-->
+
+<!-- ===== COPY FROM HERE ===== -->
+<button id="ssx-open" class="ssx-fab" type="button" aria-label="Open Systems Status">
+  <span class="ssx-led"></span> Systems Status
+</button>
+
+<div id="ssx-overlay" class="ssx-overlay" role="dialog" aria-modal="true" aria-label="Systems Status">
+  <div class="ssx-bar">
+    <span class="ssx-title"><span class="ssx-led"></span> Systems Status — Olo + DoorDash</span>
+    <button id="ssx-close" class="ssx-close" type="button" aria-label="Close">✕</button>
+  </div>
+  <iframe id="ssx-frame" class="ssx-frame" title="Systems Status" loading="lazy"></iframe>
+</div>
+
+<style>
+  .ssx-fab{
+    position:fixed; right:16px; bottom:16px; z-index:9998;
+    display:inline-flex; align-items:center; gap:8px;
+    font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:#e9e5db; background:#141a24; border:1px solid #a07c39;
+    padding:11px 15px; border-radius:999px; cursor:pointer;
+    box-shadow:0 6px 22px rgba(0,0,0,.4);
+  }
+  .ssx-fab:hover{background:#171e29}
+  .ssx-led{width:8px;height:8px;border-radius:50%;background:#46b483;box-shadow:0 0 8px #46b483;flex:0 0 auto}
+  .ssx-overlay{
+    position:fixed; inset:0; z-index:9999; display:none;
+    flex-direction:column; background:#0b0e13;
+  }
+  .ssx-overlay.ssx-show{display:flex}
+  .ssx-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:12px 16px; border-bottom:1px solid #232c3a;
+    background:linear-gradient(180deg,#141a24,#0f141c);
+  }
+  .ssx-title{display:flex;align-items:center;gap:9px;
+    font:600 15px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#e9e5db}
+  .ssx-close{
+    width:34px;height:34px;border-radius:8px;cursor:pointer;
+    background:#171e29;border:1px solid #232c3a;color:#8a93a2;font-size:15px;
+  }
+  .ssx-close:hover{border-color:#a07c39;color:#e9e5db}
+  .ssx-frame{flex:1;width:100%;border:0;background:#0b0e13}
+</style>
+
+<script>
+(function(){
+  // ⬇ If you renamed the monitor file, change this one line only.
+  var SSX_SRC = "status-monitor.html";
+
+  var open = document.getElementById("ssx-open");
+  var close = document.getElementById("ssx-close");
+  var overlay = document.getElementById("ssx-overlay");
+  var frame = document.getElementById("ssx-frame");
+
+  function show(){
+    if(!frame.src) frame.src = SSX_SRC;   // load on first open
+    overlay.classList.add("ssx-show");
+    document.body.style.overflow = "hidden";
+  }
+  function hide(){
+    overlay.classList.remove("ssx-show");
+    document.body.style.overflow = "";
+  }
+  open.addEventListener("click", show);
+  close.addEventListener("click", hide);
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && overlay.classList.contains("ssx-show")) hide();
+  });
+})();
+</script>
+<!-- ===== TO HERE ===== -->
